@@ -6,10 +6,11 @@ import tensorflow as tf
 from config import *
 import sys
 import struct
+import feature_fetcher
 
 data_names = ["train", "test"]
 for dn in data_names:
-    list_f = open('data_video/' + dn + '_list', 'r+')
+    list_f = open('data_video/' + dn + '_list', 'r')
     temp = list_f.read()
     video_list = temp.split('\n')
 
@@ -43,10 +44,10 @@ for dn in data_names:
                 print(length)
             #if (length == 30):
             #    break
-            stable = stable_frames[0]
+            stable = stable_frames[0] #[0:before_ch+2]=[0:9], 9
             for i in range(1, before_ch + 2):
                 stable = np.concatenate((stable, stable_frames[i]), axis=3)
-            unstable = unstable_frames[before_ch]
+            unstable = unstable_frames[before_ch] #[before_ch:tot_ch+1]=[7:16], 9
             for i in range(before_ch + 1, tot_ch + 1):
                 unstable = np.concatenate((unstable, unstable_frames[i]), axis=3)
             #calc flow_x
@@ -71,7 +72,11 @@ for dn in data_names:
             example = tf.train.Example(features=tf.train.Features(feature={
                 "stable": tf.train.Feature(float_list=tf.train.FloatList(value=stable)),
                 "unstable": tf.train.Feature(float_list=tf.train.FloatList(value=unstable)),
-                "flow": tf.train.Feature(float_list=tf.train.FloatList(value=flow))
+                "flow": tf.train.Feature(float_list=tf.train.FloatList(value=flow)),
+                "feature_matches1": tf.train.Feature(float_list=tf.train.FloatList(value=\
+                    feature_fetcher.fetch(video_name, before_ch + length).flatten().tolist())),
+                "feature_matches2": tf.train.Feature(float_list=tf.train.FloatList(value=\
+                    feature_fetcher.fetch(video_name, before_ch + length + 1).flatten().tolist())),
             }))
 
             writer.write(example.SerializeToString())

@@ -74,9 +74,9 @@ for dn in data_names:
                 "unstable": tf.train.Feature(float_list=tf.train.FloatList(value=unstable)),
                 "flow": tf.train.Feature(float_list=tf.train.FloatList(value=flow)),
                 "feature_matches1": tf.train.Feature(float_list=tf.train.FloatList(value=\
-                    feature_fetcher.fetch(video_name, before_ch + length).flatten().tolist())),
+                    feature_fetcher.fetch(video_name, before_ch + length - 1).flatten().tolist())),
                 "feature_matches2": tf.train.Feature(float_list=tf.train.FloatList(value=\
-                    feature_fetcher.fetch(video_name, before_ch + length + 1).flatten().tolist())),
+                    feature_fetcher.fetch(video_name, before_ch + length).flatten().tolist())),
             }))
 
             writer.write(example.SerializeToString())

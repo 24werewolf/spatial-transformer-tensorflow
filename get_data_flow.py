@@ -46,13 +46,30 @@ def warp_flow(flow, para):
     flow_y = tf.cond(tf.equal(para['flip'], 0), lambda: flow_y, lambda: fliped_y)
     return tf.concat([flow_x, flow_y], axis=2)
 
-def read_and_decode(filepath, num_epochs):
+def warp_point(points, mask, para):
+    h = int(height / random_crop_rate)
+    w = int(width / random_crop_rate)
+
+    # points = points / [width, height, width, height] * 2 - 1
+    points_x = tf.stack([points[:,0], points[:,2]], axis=1)
+    points_y = tf.stack([points[:,1], points[:,3]], axis=1)
+    points_x = (points_x + (1 - tf.cast(para['w'], tf.float32) / w * 2)) / (height / float(h)) - 1
+    points_y = (points_y + (1 - tf.cast(para['h'], tf.float32) / h * 2)) / (width / float(w)) - 1
+
+    fliped_x = points_x * (-1) - 1.0 / width
+    points_x = tf.cond(tf.equal(para['flip'], 0), lambda: points_x, lambda: fliped_x)
+    points = tf.stack([points_x[:,0], points_y[:,0], points_x[:,1], points_y[:,1]], axis=1)
+    mask = tf.logical_and(tf.reduce_all(tf.logical_and(points >= -1, points <= 1), axis=1), mask)
+    print('points.shape, mask.shape={},{}'.format(points.shape, mask.shape))
+    return points, mask
+
+def read_and_decode(filepath, num_epochs, shuffle=True):
     file_obj = open(filepath + 'list.txt')
     file_txt = file_obj.read()
     file_list = []
     for f in file_txt.split(' '):
-        file_list.append(filepath + f)
-    filename_queue = tf.train.string_input_producer(file_list, num_epochs=num_epochs, shuffle=True)
+        file_list.append(filepath + f.strip())
+    filename_queue = tf.train.string_input_producer(file_list, num_epochs=num_epochs, shuffle=shuffle)
 
     reader = tf.TFRecordReader()
     _, serialized_example = reader.read(filename_queue)
@@ -60,11 +77,29 @@ def read_and_decode(filepath, num_epochs):
                                        features={
                                            'stable': tf.FixedLenFeature([height * width * (before_ch + 2)], tf.float32),
                                            'unstable': tf.FixedLenFeature([height * width * (after_ch + 2)], tf.float32),
-                                           'flow': tf.FixedLenFeature([height * width * 2], tf.float32)
+                                           'flow': tf.FixedLenFeature([height * width * 2], tf.float32),
+                                           'feature_matches1': tf.VarLenFeature(tf.float32),
+                                           'feature_matches2': tf.VarLenFeature(tf.float32),
                                        })
     stable_ = tf.reshape(features['stable'], [height, width, before_ch + 2])
     unstable_ = tf.reshape(features['unstable'], [height, width, after_ch + 2])
     flow_ = tf.reshape(features['flow'], [height, width, 2])
+
+    feature_matches1_ = tf.reshape(tf.sparse_tensor_to_dense(features['feature_matches1']), [-1, 4])
+    feature_matches2_ = tf.reshape(tf.sparse_tensor_to_dense(features['feature_matches2']), [-1, 4])
+    num_matches1_ = tf.shape(feature_matches1_)[0]
+    num_matches2_ = tf.shape(feature_matches2_)[0]
+    print(feature_matches1_.shape, feature_matches2_.shape)
+    with tf.control_dependencies([tf.assert_less(num_matches1_, tf.constant(max_matches)), \
+                                tf.assert_less(num_matches2_, tf.constant(max_matches))]):
+        feature_matches1_ = tf.identity(feature_matches1_)
+    feature_matches1_ = tf.pad(feature_matches1_, ((0, max_matches - num_matches1_), (0, 0)))
+    feature_matches2_ = tf.pad(feature_matches2_, ((0, max_matches - num_matches2_), (0, 0)))
+    feature_matches1_.set_shape([max_matches, 4])
+    feature_matches2_.set_shape([max_matches, 4])
+    mask1_ = tf.sequence_mask([num_matches1_], max_matches)[0]
+    mask2_ = tf.sequence_mask([num_matches2_], max_matches)[0]
+
     seed = random.randint(0, 2**31 - 1)
     para = get_rand_para(seed) 
     for i in range(before_ch + 2):
@@ -86,10 +121,12 @@ def read_and_decode(filepath, num_epochs):
                     tf.slice(unstable, [0, 0, 1], [-1, -1, after_ch + 1])], 2)
     y2 = tf.slice(stable, [0, 0, before_ch + 1], [-1, -1, 1])
     flow = warp_flow(flow_, para)
-    return x1, y1, x2, y2, flow
+    feature_matches1, mask1 = warp_point(feature_matches1_, mask1_, para)
+    feature_matches2, mask2 = warp_point(feature_matches2_, mask2_, para)
+    return x1, y1, x2, y2, flow, feature_matches1, mask1, feature_matches2, mask2
 
 def run():
-    x, y = read_and_decode("data/train.tfrecords", 3)
+    x, y = read_and_decode("data/train.tfrecords", 3, False)
 
     x_batch, y_batch = tf.train.shuffle_batch([x, y],
                                                     batch_size=30, capacity=2000,
@@ -113,3 +150,47 @@ def run():
         summary_all = sess.run(merged)
         summary_writer.add_summary(summary_all, 0)
         summary_writer.close()
+
+def convert_to_coordinate(pts, width=width, height=height):
+    return tuple( ((pts + 1) / 2 * [width, height]).astype(np.int32) )
+def test():
+    batch_size = 1
+    data_x1, data_y1, data_x2, data_y2, data_flow, feature_matches1, mask1, feature_matches2, mask2 = \
+        read_and_decode("data3/test/", 20, False)
+       #read_and_decode("/Users/lazycal/workspace/lab/3.1/qudou/data3/test/", 20)
+
+    x1_batch, y1_batch, x2_batch, y2_batch, flow_batch, \
+    feature_matches1_batch, mask1_batch, feature_matches2_batch, mask2_batch \
+        = tf.train.batch(
+            [data_x1, data_y1, data_x2, data_y2, data_flow, feature_matches1, mask1, feature_matches2, mask2],
+            batch_size=batch_size)
+
+    sv = tf.train.Supervisor(logdir='./tmp/log', save_summaries_secs=0, saver=None)
+    with sv.managed_session(config=tf.ConfigProto(gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.3))) as sess:
+        import cv2
+        import numpy as np
+        import feature_fetcher
+        batch_x1s, batch_y1s, batch_x2s, batch_y2s, batch_flows, batch_feature_matches1, batch_mask1, batch_feature_matches2, batch_mask2 = sess.run(
+            [x1_batch, y1_batch, x2_batch, y2_batch, flow_batch, feature_matches1_batch, mask1_batch, feature_matches2_batch, mask2_batch])
+        unstable = np.tile((batch_x1s[0, :, :, before_ch] + 1)[...,None] / 2 * 255, [1,1,3])
+        stable = np.tile((batch_y1s[0, :, :, 0] + 1)[...,None] / 2 * 255, [1,1,3])
+        img = np.concatenate([stable, unstable], axis=1)
+        gt_matches = feature_fetcher.fetch('6.mp4.avi', 7)
+        print('false: ',batch_mask1[0,431:], batch_mask2[0,459:])
+        print(gt_matches, batch_feature_matches1)
+        for (match, mask) in zip(batch_feature_matches1[0], batch_mask1[0]):
+            if not mask: continue
+            if np.random.uniform(0, 1) > 0.1: continue
+            cv2.line(img, convert_to_coordinate(match[:2]), convert_to_coordinate(match[2:] + [2, 0]), tuple(np.random.rand(3) * 255))
+        cv2.imwrite('./test.jpg', img)
+
+        img1 = np.concatenate([cv2.imread('./frames/stable/6/image-0008.jpg'), cv2.imread('./frames/unstable/6/image-0008.jpg')],
+                                axis=1)
+        print('---------------------------------')
+        cvt = lambda x:convert_to_coordinate(x, img1.shape[1] / 2, img1.shape[0])
+        for match in gt_matches:
+            if np.random.uniform(0, 1) > 0.1: continue
+            cv2.line(img1, cvt(match[:2]), cvt(match[2:] + [2, 0]), tuple(np.random.rand(3) * 255))
+        cv2.imwrite('./test1.jpg', img1)
+if __name__ == '__main__':
+    test()

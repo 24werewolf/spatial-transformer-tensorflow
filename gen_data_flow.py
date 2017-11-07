@@ -8,7 +8,7 @@ import sys
 import struct
 import feature_fetcher
 
-data_names = ["train", "test"]
+data_names = ["test", "train"]
 for dn in data_names:
     list_f = open('data_video/' + dn + '_list', 'r')
     temp = list_f.read()

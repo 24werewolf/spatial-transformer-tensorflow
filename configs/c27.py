@@ -11,7 +11,7 @@ training_iter = 70000
 step_size = 30000
 train_data_size = 4000
 test_data_size = 600
-crop_rate = 0.8
+crop_rate = 1#0.8
 before_ch = 7
 after_ch = 7
 tot_ch = before_ch + after_ch + 1
@@ -27,4 +27,4 @@ do_black_loss_iter = 300
 tfrecord_item_num = 10
 log_dir = 'log/27/'
 model_dir = 'models/27/'
-
+max_matches = 1000

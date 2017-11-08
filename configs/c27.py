@@ -4,6 +4,7 @@ batch_size = 10
 initial_learning_rate = 2e-4
 theta_mul = 400
 regu_mul = 30
+feature_mul = 500 * width
 img_mul = 1
 temp_mul = 3
 black_mul = 300000

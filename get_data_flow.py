@@ -2,6 +2,8 @@ import tensorflow as tf
 import scipy.misc
 import random
 from config import *
+import utils
+logger = utils.get_logger()
 
 def get_rand_para(seed): 
     h = int(height / random_crop_rate)
@@ -60,7 +62,7 @@ def warp_point(points, mask, para):
     points_x = tf.cond(tf.equal(para['flip'], 0), lambda: points_x, lambda: fliped_x)
     points = tf.stack([points_x[:,0], points_y[:,0], points_x[:,1], points_y[:,1]], axis=1)
     mask = tf.logical_and(tf.reduce_all(tf.logical_and(points >= -1, points <= 1), axis=1), mask)
-    print('points.shape, mask.shape={},{}'.format(points.shape, mask.shape))
+    logger.info('points.shape, mask.shape={},{}'.format(points.shape, mask.shape))
     return points, mask
 
 def read_and_decode(filepath, num_epochs, shuffle=True):
@@ -89,7 +91,7 @@ def read_and_decode(filepath, num_epochs, shuffle=True):
     feature_matches2_ = tf.reshape(tf.sparse_tensor_to_dense(features['feature_matches2']), [-1, 4])
     num_matches1_ = tf.shape(feature_matches1_)[0]
     num_matches2_ = tf.shape(feature_matches2_)[0]
-    print(feature_matches1_.shape, feature_matches2_.shape)
+    logger.info('feature_matches1_.shape={}, feature_matches2_.shape=q{}'.format(feature_matches1_.shape, feature_matches2_.shape))
     with tf.control_dependencies([tf.assert_less(num_matches1_, tf.constant(max_matches)), \
                                 tf.assert_less(num_matches2_, tf.constant(max_matches))]):
         feature_matches1_ = tf.identity(feature_matches1_)
@@ -138,8 +140,8 @@ def run():
         sess.run(tf.initialize_local_variables())
         threads = tf.train.start_queue_runners(sess=sess, coord = coord)
         x_b, y_b = sess.run([x_batch, y_batch])
-        print(x_b.shape)
-        print(x_b)
+        logger.info(x_b.shape)
+        logger.info(x_b)
         mage_summary = tf.summary.image('y', y_b, 5)
         for i in range(tot_ch):
             temp = tf.slice(x_b, [0, 0, 0, i], [-1, -1, -1, 1])
@@ -176,8 +178,8 @@ def test():
         stable = np.tile((batch_y1s[0, :, :, 0] + 1)[...,None] / 2 * 255, [1,1,3])
         img = np.concatenate([stable, unstable], axis=1)
         gt_matches = feature_fetcher.fetch('6.mp4.avi', 7)
-        print('false: ',batch_mask1[0,431:], batch_mask2[0,459:])
-        print(gt_matches, batch_feature_matches1)
+        logger.info('false: ',batch_mask1[0,431:], batch_mask2[0,459:])
+        logger.info(gt_matches, batch_feature_matches1)
         for (match, mask) in zip(batch_feature_matches1[0], batch_mask1[0]):
             if not mask: continue
             if np.random.uniform(0, 1) > 0.1: continue
@@ -186,7 +188,7 @@ def test():
 
         img1 = np.concatenate([cv2.imread('./frames/stable/6/image-0008.jpg'), cv2.imread('./frames/unstable/6/image-0008.jpg')],
                                 axis=1)
-        print('---------------------------------')
+        logger.info('---------------------------------')
         cvt = lambda x:convert_to_coordinate(x, img1.shape[1] / 2, img1.shape[0])
         for match in gt_matches:
             if np.random.uniform(0, 1) > 0.1: continue

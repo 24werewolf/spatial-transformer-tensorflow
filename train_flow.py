@@ -27,10 +27,12 @@ from tensorflow.python.client import timeline
 import utils
 from collections import namedtuple
 import argparse
+import os
 slim = tf.contrib.slim
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--gpu_memory_fraction', type=float, default=0.95)
+parser.add_argument('--restore', action='store_true')
 args = parser.parse_args()
 cnt = 0
 
@@ -134,15 +136,21 @@ run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
 run_metadata = tf.RunMetadata()
 sv = tf.train.Supervisor(logdir=log_dir, save_summaries_secs=0, saver=None)
 with sv.managed_session(config=tf.ConfigProto(gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=args.gpu_memory_fraction))) as sess:
-    sess.run(init_all)
-    threads = tf.train.start_queue_runners(sess=sess)
-    #if DEBUG: saver.restore(sess, tf.train.latest_checkpoint("./models/27/"))
-    restorer.restore(sess, checkpoint_file)
+    #sess.run(init_all)
+    #threads = tf.train.start_queue_runners(sess=sess)
+    if args.restore: 
+        saver.restore(sess, tf.train.latest_checkpoint(model_dir))
+        logger.info('restoring {}'.format(tf.train.latest_checkpoint(model_dir)))
+    else:
+        restorer.restore(sess, checkpoint_file)
+
+    st_step = max(0,sess.run(global_step))
+    sv.summary_writer.add_session_log(tf.SessionLog(status=tf.SessionLog.START), global_step=st_step-1)
     time_start = time.time()
     tot_time = 0
     tot_train_time = 0
 
-    for i in range(training_iter):
+    for i in range(st_step, training_iter):
         batch_x1s, batch_y1s, batch_x2s, batch_y2s, batch_flows, batch_feature_matches1, batch_mask1, batch_feature_matches2, batch_mask2 = sess.run(
             [x1_batch, y1_batch, x2_batch, y2_batch, flow_batch, feature_matches1_batch, mask1_batch, feature_matches2_batch, mask2_batch])
         if (i > no_theta_iter):
@@ -236,15 +244,28 @@ with sv.managed_session(config=tf.ConfigProto(gpu_options = tf.GPUOptions(per_pr
                         assert(pts.shape[0] == max_matches)
                         assert(mask.shape[0] == max_matches)
                         pts = (pts / 2 + .5) * img.shape[1::-1]
-                        logger.info('pts={}'.format(pts))
+                        #logger.info('pts={}'.format(pts))
                         pts = pts.astype(np.int32)
                         for i in range(pts.shape[0]):
                             if not mask[i]: continue
                             cv2.circle(res, tuple(pts[i]), 10, tuple(np.random.rand(3) * 255) if color is None else color)
                         return res
+                    def cvt_theta_mat(theta_mat):
+                        # theta_mat * x = x'
+                        # ret * scale_mat * x = scale_mat * x'
+                        # ret = scale_mat * theta_mat * scale_mat^-1
+                        scale_mat = np.eye(3)
+                        scale_mat[0, 0] = width / 2.
+                        scale_mat[0, 2] = width / 2.
+                        scale_mat[1, 1] = height / 2.
+                        scale_mat[1, 2] = height / 2.
+                        assert(theta_mat.shape == (3, 3))
+                        from numpy.linalg import inv
+                        return np.matmul(np.matmul(scale_mat, theta_mat), inv(scale_mat))
                     mask = mask.copy()
                     for i in range(matches.shape[0]):
-                        mask = np.logical_and(mask, (np.random.normal(0, 1, mask.shape) > 0.8))
+                        global cnt
+                        #mask = np.logical_and(mask, (np.random.uniform(0, 1, mask.shape) > 0.8))
                         # for j in range(mask[i].shape[0]):
                         #     if mask[i, j] and np.random.normal(0, 1) < 0.8:
                         #         mask[i, j] = False
@@ -254,7 +275,9 @@ with sv.managed_session(config=tf.ConfigProto(gpu_options = tf.GPUOptions(per_pr
                         unstable = cvt(input_data.x1[i, :, :, before_ch, None])
                         # logger.info('img.shape={}, {}, mask.shape={}'.format(img.shape, img.shape[1::-1], mask.shape))
                         # logger.info('stable_warpped_pts_batchimg.shape={}, matches.shape={}'.format(stable_warpped_pts_batch.shape, matches.shape))
-                        warpped = cv2.warpPerspective(img, theta_mat[i], img.shape[1::-1])
+                        theta_mat_cvt = cvt_theta_mat(theta_mat[i])
+                        np.savetxt(os.path.join(log_dir, 'theta-%04d.txt'%cnt), theta_mat_cvt)
+                        warpped = cv2.warpPerspective(img, theta_mat_cvt, img.shape[1::-1])
                         img = draw(img, matches[i, :, :2], mask[i])
                         warpped = draw(warpped, stable_warpped_pts_batch[i], mask[i])
                         unstable = draw(unstable, stable_warpped_pts_batch[i], mask[i], (255, 0, 0))
@@ -262,9 +285,8 @@ with sv.managed_session(config=tf.ConfigProto(gpu_options = tf.GPUOptions(per_pr
                         res = np.concatenate([img, out], axis=1)
                         res1 = np.concatenate([warpped, unstable], axis=1)
                         res = np.concatenate([res, res1], axis=0)
-                        global cnt
-                        cv2.imwrite('test-%04d.jpg'%cnt, res)
-                        cnt = (cnt + 1) % 10
+                        cv2.imwrite(os.path.join(log_dir, 'test-%04d.jpg'%cnt), res)
+                        cnt = (cnt + 1) % 20
                 save_warpped_features(mask)
 
                 sum_test_loss += loss

@@ -129,15 +129,15 @@ def read_and_decode(filepath, num_epochs, shuffle=True):
     _, serialized_example = reader.read(filename_queue)
     features = tf.parse_single_example(serialized_example,
                                        features={
-                                           'stable': tf.FixedLenFeature([height * width * (before_ch + 2)], tf.float32),
-                                           'unstable': tf.FixedLenFeature([height * width * (after_ch + 2)], tf.float32),
-                                           'flow': tf.FixedLenFeature([height * width * 2], tf.float32),
+                                           'stable': tf.VarLenFeature(tf.float32),
+                                           'unstable': tf.VarLenFeature(tf.float32),
+                                           'flow': tf.VarLenFeature(tf.float32),
                                            'feature_matches1': tf.VarLenFeature(tf.float32),
                                            'feature_matches2': tf.VarLenFeature(tf.float32),
                                        })
-    stable_ = tf.reshape(features['stable'], [height, width, before_ch + 2])
-    unstable_ = tf.reshape(features['unstable'], [height, width, after_ch + 2])
-    flow_ = tf.reshape(features['flow'], [height, width, 2])
+    stable_ = tf.reshape(tf.sparse_tensor_to_dense(features['stable']), [height, width, -1])[:, :, -(before_ch + 2):]
+    unstable_ = tf.reshape(tf.sparse_tensor_to_dense(features['unstable']), [height, width, -1])[:, :, :after_ch + 2]
+    flow_ = tf.reshape(tf.sparse_tensor_to_dense(features['flow']), [height, width, -1])[:, :, :2]
 
     feature_matches1_ = tf.reshape(tf.sparse_tensor_to_dense(features['feature_matches1']), [-1, 4])
     feature_matches2_ = tf.reshape(tf.sparse_tensor_to_dense(features['feature_matches2']), [-1, 4])

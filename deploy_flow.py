@@ -4,22 +4,35 @@ from config import *
 from PIL import Image
 import cv2
 import time
+import argparse
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--model-dir')
+parser.add_argument('--model-name')
+parser.add_argument('--before-ch', type=int)
+parser.add_argument('--after-ch', type=int)
+args = parser.parse_args()
 
 start_with_stable = True
 
 sess = tf.Session()
 
-model_name = 'model-464000'
+model_dir = args.model_dir#'models/vbeta-1.1.0/'
+model_name = args.model_name#'model-5000'
+before_ch = args.before_ch
+after_ch = args.after_ch
 new_saver = tf.train.import_meta_graph(model_dir + model_name + '.meta')
 new_saver.restore(sess, model_dir + model_name)
 graph = tf.get_default_graph()
 x_tensor = graph.get_tensor_by_name('stable_net/input/x_tensor:0')
-output = graph.get_tensor_by_name('stable_net/SpatialTransformer/_transform/Reshape_6:0')
-black_pix = graph.get_tensor_by_name('stable_net/SpatialTransformer/_transform/Reshape_5:0')
+output = graph.get_tensor_by_name('stable_net/SpatialTransformer/_transform/Reshape_7:0')
+black_pix = graph.get_tensor_by_name('stable_net/SpatialTransformer/_transform/Reshape_6:0')
+#output = graph.get_tensor_by_name('stable_net/inference/SpatialTransformer/_transform/Reshape_7:0')
+#black_pix = graph.get_tensor_by_name('stable_net/inference/SpatialTransformer/_transform/Reshape_6:0')
 #black_pix = graph.get_tensor_by_name('stable_net/img_loss/StopGradient:0')
 
 #list_f = open('data_video/test_list_deploy', 'r')
-list_f = open('data_video/test_list__', 'r')
+list_f = open('data_video/test_list_deploy', 'r')
 temp = list_f.read()
 video_list = temp.split('\n')
 
@@ -70,7 +83,11 @@ for video_name in video_list:
             in_x = np.concatenate((in_x, before_frames[i]), axis = 3)
         for i in range(after_ch + 1):
             in_x = np.concatenate((in_x, after_frames[i]), axis = 3)
-        img, black = sess.run([output, black_pix], feed_dict={x_tensor:in_x})
+        in_x_t = in_x
+        for i in range(batch_size - 1):
+            in_x_t = np.concatenate((in_x_t, in_x), axis = 0)
+
+        img, black = sess.run([output, black_pix], feed_dict={x_tensor:in_x_t})
         black = black[0, :, :]
         img = img[0, :, :, :].reshape(height, width) #* (1 - black) + black * 0.5
         frame = img + black * (-1)

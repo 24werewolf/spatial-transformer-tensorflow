@@ -9,7 +9,7 @@ import struct
 import feature_fetcher
 
 data_names = ["test", "train"]
-data_path = "data5/"
+data_path = "data6/"
 for dn in data_names:
     list_f = open('data_video/' + dn + '_list', 'r')
     temp = list_f.read()

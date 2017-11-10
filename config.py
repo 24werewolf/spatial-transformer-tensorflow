@@ -1,7 +1,7 @@
 import cv2
 from PIL import Image
 import numpy as np
-from configs.v1_1_0 import *
+from configs.v1_1_2 import *
 DEBUG = True
 def cvt_img2train(img, crop_rate = 1):
     img = Image.fromarray(cv2.cvtColor(img,cv2.COLOR_BGR2GRAY))

@@ -169,16 +169,20 @@ def transformer(U, theta, out_size, name='SpatialTransformer', **kwargs):
             x_s = tf.slice(T_g, [0, 0, 0], [-1, 1, -1])
             y_s = tf.slice(T_g, [0, 1, 0], [-1, 1, -1])
             z_s = tf.slice(T_g, [0, 2, 0], [-1, 1, -1])
+ 
             z_s_flat = tf.reshape(z_s, [-1])
-            x_s_flat = tf.reshape(x_s, [-1]) #/ z_s_flat
-            y_s_flat = tf.reshape(y_s, [-1]) #/ z_s_flat
+            t_1 = tf.ones(shape = tf.shape(z_s_flat))
+            t_0 = tf.zeros(shape = tf.shape(z_s_flat))      
 
-            t_1 = tf.ones(shape = tf.shape(x_s_flat))
-            t_0 = tf.zeros(shape = tf.shape(x_s_flat))
+            sign_z_flat = tf.where(z_s_flat >= 0, t_1, t_0) * 2 - 1
+            z_s_flat = tf.reshape(z_s, [-1]) + sign_z_flat * 1e-8
+            x_s_flat = tf.reshape(x_s, [-1]) / z_s_flat
+            y_s_flat = tf.reshape(y_s, [-1]) / z_s_flat
+
             cond = tf.logical_or(tf.logical_or(tf.greater(t_1 * -1, x_s_flat), tf.greater(x_s_flat, t_1)), 
                                  tf.logical_or(tf.greater(t_1 * -1, y_s_flat), tf.greater(y_s_flat, t_1)))
-            black_pix = tf.reshape(tf.where(cond, t_1, t_0), [num_batch, -1])
-            black_pix = tf.reduce_sum(black_pix, [1])
+            black_pix = tf.reshape(tf.where(cond, t_1, t_0), [num_batch, height, width])
+            #black_pix = tf.reduce_sum(black_pix, [1])
 
             input_transformed = _interpolate(
                 input_dim, x_s_flat, y_s_flat,

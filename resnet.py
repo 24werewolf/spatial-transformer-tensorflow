@@ -57,6 +57,7 @@ def output_layer(input_layer, num_labels):
 
 
 def batch_normalization_layer(input_layer, dimension):
+    #return input_layer
     '''
     Helper function to do batch normalziation
     :param input_layer: 4D tensor

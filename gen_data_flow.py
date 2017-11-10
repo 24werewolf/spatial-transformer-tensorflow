@@ -9,6 +9,7 @@ import struct
 import feature_fetcher
 
 data_names = ["test", "train"]
+data_path = "data5/"
 for dn in data_names:
     list_f = open('data_video/' + dn + '_list', 'r')
     temp = list_f.read()
@@ -17,7 +18,7 @@ for dn in data_names:
     record_num = 0
     file_num = 0
     file_list = str(file_num) + ".tfrecords"
-    writer = tf.python_io.TFRecordWriter("data3/" + dn + "/" + str(file_num) + ".tfrecords")
+    writer = tf.python_io.TFRecordWriter(data_path + dn + "/" + str(file_num) + ".tfrecords")
 
     for video_name in video_list:
         if (video_name == ""):
@@ -86,7 +87,7 @@ for dn in data_names:
                 file_num += 1
                 writer.close()
                 file_list += " " + str(file_num) + ".tfrecords"
-                writer = tf.python_io.TFRecordWriter("data3/" + dn + "/" + str(file_num) + ".tfrecords")
+                writer = tf.python_io.TFRecordWriter(data_path + dn + "/" + str(file_num) + ".tfrecords")
 
             ret, frame_stable = stable_cap.read()  
             ret, frame_unstable = unstable_cap.read()
@@ -99,6 +100,6 @@ for dn in data_names:
         stable_cap.release()  
         unstable_cap.release()  
     writer.close()
-    file_object = open("data3/" + dn + "/list.txt", 'w')
+    file_object = open(data_path + dn + "/list.txt", 'w')
     file_object.write(file_list)
     file_object.close( )

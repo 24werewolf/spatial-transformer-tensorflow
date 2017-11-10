@@ -65,6 +65,58 @@ def warp_point(points, mask, para):
     logger.info('points.shape, mask.shape={},{}'.format(points.shape, mask.shape))
     return points, mask
 
+def get_rand_H():
+    H = tf.random_uniform([1], minval=rand_H_min[0, 0], maxval=rand_H_max[0, 0], dtype=tf.float32)
+    for i in range(3):
+        for j in range(3):
+            if (i == 0 and j == 0):
+                continue
+            H = tf.concat([H, tf.random_uniform([1], minval=rand_H_min[i, j], maxval=rand_H_max[i, j], dtype=tf.float32)], axis=0)
+    return tf.reshape(H, [3, 3])
+
+def mesh_grid(height, width):
+    with tf.variable_scope('_meshgrid'):
+        x_t = tf.matmul(tf.ones(shape=tf.stack([height, 1])),
+                        tf.transpose(tf.expand_dims(tf.linspace(-1.0, 1.0, width), 1), [1, 0]))
+        y_t = tf.matmul(tf.expand_dims(tf.linspace(-1.0, 1.0, height), 1),
+                        tf.ones(shape=tf.stack([1, width])))
+
+        x_t_flat = tf.reshape(x_t, (1, -1))
+        y_t_flat = tf.reshape(y_t, (1, -1))
+
+        ones = tf.ones_like(x_t_flat)
+        grid = tf.concat([x_t_flat, y_t_flat, ones], 0)
+    return grid
+
+def get_rand_mask():
+    H = get_rand_H()
+    grid = mesh_grid(height, width)
+    T_g = tf.matmul(H, grid)
+    x_s = tf.slice(T_g, [0, 0], [1, -1])
+    y_s = tf.slice(T_g, [1, 0], [1, -1])
+    z_s = tf.slice(T_g, [2, 0], [1, -1])
+    x_s_flat = tf.reshape(x_s / z_s, [-1])   
+    y_s_flat = tf.reshape(y_s / z_s, [-1])
+
+    t_1 = tf.ones(shape = tf.shape(x_s_flat))
+    t_0 = tf.zeros(shape = tf.shape(x_s_flat))
+    cond = tf.logical_or(tf.logical_or(tf.greater(t_1 * -1, x_s_flat), tf.greater(x_s_flat, t_1)), 
+                         tf.logical_or(tf.greater(t_1 * -1, y_s_flat), tf.greater(y_s_flat, t_1)))
+    black_pix = tf.reshape(tf.where(cond, t_1, t_0), [height, width])
+    return black_pix
+
+def add_mask(pics):
+    for i in range(before_ch):
+        temp = tf.reshape(tf.slice(pics, [0, 0, i], [-1, -1, 1]), [height, width])
+        mask = get_rand_mask()
+        temp = temp * (1 -  mask) + mask * -1
+        temp = tf.expand_dims(temp, 2)
+        if (i == 0):
+            ans = temp
+        else:
+            ans = tf.concat([ans, temp], axis = 2)
+    return ans
+
 def read_and_decode(filepath, num_epochs, shuffle=True):
     file_obj = open(filepath + 'list.txt')
     file_txt = file_obj.read()
@@ -116,10 +168,10 @@ def read_and_decode(filepath, num_epochs, shuffle=True):
             unstable = warp_img(temp, seed, para)
         else:
             unstable = tf.concat([unstable, warp_img(temp, seed, para)], 2)
-    x1 = tf.concat([tf.slice(stable, [0, 0, 0], [-1, -1, before_ch]), 
+    x1 = tf.concat([add_mask(tf.slice(stable, [0, 0, 0], [-1, -1, before_ch])), 
                     tf.slice(unstable, [0, 0, 0], [-1, -1, after_ch + 1])], 2)
     y1 = tf.slice(stable, [0, 0, before_ch], [-1, -1, 1])
-    x2 = tf.concat([tf.slice(stable, [0, 0, 1], [-1, -1, before_ch]), 
+    x2 = tf.concat([add_mask(tf.slice(stable, [0, 0, 1], [-1, -1, before_ch])), 
                     tf.slice(unstable, [0, 0, 1], [-1, -1, after_ch + 1])], 2)
     y2 = tf.slice(stable, [0, 0, before_ch + 1], [-1, -1, 1])
     flow = warp_flow(flow_, para)

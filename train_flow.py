@@ -21,14 +21,16 @@ from resnet import *
 import get_data_flow
 from config import *
 import time
-import s_net
+#import s_net
+import s_net_new as s_net
 from tensorflow.python.client import timeline
 import utils
 from collections import namedtuple
 import argparse
+slim = tf.contrib.slim
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--gpu_memory_fraction', type=float, default=0.9)
+parser.add_argument('--gpu_memory_fraction', type=float, default=0.95)
 args = parser.parse_args()
 cnt = 0
 
@@ -37,6 +39,9 @@ def show_image(name, img, min_v = 0, max_v = 1):
     #img_ = tf.pad(img, [[0, 0], [1, 1], [1, 1], [0, 0]], constant_values = max_v)
     #img_ = tf.pad(img_, [[0, 0], [1, 1], [1, 1], [0, 0]], constant_values = min_v)
     tf.summary.image(name, img)
+
+def name_in_checkpoint(var):
+    return var.op.name[18:]
 
 ret1 = s_net.inference_stable_net(False)
 ret2 = s_net.inference_stable_net(True)
@@ -48,9 +53,16 @@ with tf.name_scope('data_flow'):
 
 with tf.name_scope('temp_loss'):
     use_temp_loss = tf.placeholder(tf.float32)
-    #output2_aft_flow = interpolate(ret2['output'], x_flow, y_flow, (height, width))
-    output2_aft_flow = ret2['output']#28
-    temp_loss = tf.nn.l2_loss(ret1['output'] - output2_aft_flow) / batch_size * use_temp_loss
+    output2_aft_flow = interpolate(ret2['output'], x_flow, y_flow, (height, width))
+    noblack_pix2_aft_flow = interpolate(1 - ret2['black_pix'], x_flow, y_flow, (height, width))
+    #output2_aft_flow = ret2['output']#28
+    temp_err = ret1['output'] - output2_aft_flow
+    noblack = (1 - ret1['black_pix']) * noblack_pix2_aft_flow
+    temp_err = temp_err * noblack
+    show_image('err_temp', temp_err * temp_err)
+    temp_loss = tf.reduce_sum(tf.reduce_sum(temp_err * temp_err, [1, 2, 3]) / 
+            (tf.reduce_sum(noblack, [1, 2, 3]) + 1e-8), [0]) / batch_size * use_temp_loss
+    #temp_loss = tf.nn.l2_loss(temp_err) / batch_size * use_temp_loss
 
 with tf.name_scope('errors'):
     show_image('error_temp', tf.abs(ret1['output'] - output2_aft_flow))
@@ -87,10 +99,10 @@ optimizer = opt.minimize(total_loss, global_step=global_step)
 with tf.name_scope('datas'):
     data_x1, data_y1, data_x2, data_y2, data_flow, \
         data_feature_matches1, data_mask1, data_feature_matches2, data_mask2 = get_data_flow.read_and_decode(
-            "data/train/", int(training_iter * batch_size / train_data_size) + 2)
+            data_dir + "train/", int(training_iter * batch_size / train_data_size) + 2)
     test_x1, test_y1, test_x2, test_y2, test_flow, \
         test_feature_matches1, test_mask1, test_feature_matches2, test_mask2 = get_data_flow.read_and_decode(
-            "data/test/", int(training_iter * batch_size * test_batches / test_data_size / test_freq) + 2)
+            data_dir + "test/", int(training_iter * batch_size * test_batches / test_data_size / test_freq) + 2)
 
     x1_batch, y1_batch, x2_batch, y2_batch, flow_batch,\
         feature_matches1_batch, mask1_batch, feature_matches2_batch, mask2_batch = tf.train.shuffle_batch(
@@ -105,19 +117,27 @@ with tf.name_scope('datas'):
                                                 batch_size=batch_size, capacity=120,
                                                 min_after_dequeue=80, num_threads=10)
 
+checkpoint_file = 'data_video/resnet_v2_50.ckpt'
+vtr = slim.get_variables_to_restore(exclude=['stable_net/resnet/resnet_v2_50/conv1', 'stable_net/resnet/fc'])
+vtr = [v for v in vtr if ((not ('Adam' in v.op.name)) and (len(v.op.name) > 18))]
+vtr = {name_in_checkpoint(var):var for var in vtr}
+#print (vtr)
+#variables_to_restore = slim.get_model_variables()
+#variables_to_restore = {name_in_checkpoint(var):var for var in variables_to_restore}
+restorer = tf.train.Saver(vtr)
+
 merged = tf.summary.merge_all()
 test_merged = tf.summary.merge_all("test")
 saver = tf.train.Saver()
-init_all = tf.initialize_all_variables()
+#init_all = tf.initialize_all_variables()
 run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
 run_metadata = tf.RunMetadata()
 sv = tf.train.Supervisor(logdir=log_dir, save_summaries_secs=0, saver=None)
 with sv.managed_session(config=tf.ConfigProto(gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=args.gpu_memory_fraction))) as sess:
     sess.run(init_all)
-    if DEBUG: saver.restore(sess, tf.train.latest_checkpoint("./models/27/"))
-    #sess.run(tf.initialize_local_variables())
-    #threads = tf.train.start_queue_runners(sess=sess)
-
+    threads = tf.train.start_queue_runners(sess=sess)
+    #if DEBUG: saver.restore(sess, tf.train.latest_checkpoint("./models/27/"))
+    restorer.restore(sess, checkpoint_file)
     time_start = time.time()
     tot_time = 0
     tot_train_time = 0
@@ -139,6 +159,10 @@ with sv.managed_session(config=tf.ConfigProto(gpu_options = tf.GPUOptions(per_pr
             use_black = 1
         else:
             use_black = 0
+        if (i <= do_theta_only_iter):
+            theta_only = 1
+        else:
+            theta_only = 0
         if i % disp_freq == 0:
             print('==========================')
             print('read data time:' + str(tot_time / disp_freq) + 's')
@@ -146,7 +170,7 @@ with sv.managed_session(config=tf.ConfigProto(gpu_options = tf.GPUOptions(per_pr
             tot_train_time = 0
             tot_time = 0
             time_start = time.time()
-            loss, summary, bp = sess.run([total_loss, merged, ret1['black_pos']],
+            loss, summary = sess.run([total_loss, merged],
                             feed_dict={
                                 ret1['x_tensor']: batch_x1s,
                                 ret1['y']: batch_y1s,
@@ -161,9 +185,10 @@ with sv.managed_session(config=tf.ConfigProto(gpu_options = tf.GPUOptions(per_pr
                                 ret2['use_theta_loss']: use_theta,
                                 use_temp_loss: use_temp,
                                 ret1['use_black_loss']: use_black,
-                                ret2['use_black_loss']: use_black
+                                ret2['use_black_loss']: use_black,
+                                ret1['use_theta_only']: theta_only,
+                                ret2['use_theta_only']: theta_only
                             })
-            print(bp)
             sv.summary_writer.add_summary(summary, i)
             print('Iteration: ' + str(i) + ' Loss: ' + str(loss))
             lr = sess.run(learning_rate)
@@ -201,7 +226,9 @@ with sv.managed_session(config=tf.ConfigProto(gpu_options = tf.GPUOptions(per_pr
                                 ret2['use_theta_loss']: use_theta,
                                 use_temp_loss: use_temp,
                                 ret1['use_black_loss']: use_black,
-                                ret2['use_black_loss']: use_black
+                                ret2['use_black_loss']: use_black,
+                                ret1['use_theta_only']: theta_only,
+                                ret2['use_theta_only']: theta_only
                             })
                 def save_warpped_features(mask):
                     def draw(img, pts, mask, color=None):
@@ -268,7 +295,9 @@ with sv.managed_session(config=tf.ConfigProto(gpu_options = tf.GPUOptions(per_pr
                         ret2['use_theta_loss']: use_theta,
                         use_temp_loss: use_temp,
                         ret1['use_black_loss']: use_black,
-                        ret2['use_black_loss']: use_black
+                        ret2['use_black_loss']: use_black,
+                        ret1['use_theta_only']: theta_only,
+                        ret2['use_theta_only']: theta_only
                     })
         t_e = time.time()
         tot_train_time += t_e - t_s

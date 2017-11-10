@@ -9,7 +9,7 @@ start_with_stable = True
 
 sess = tf.Session()
 
-model_name = 'model-63000'
+model_name = 'model-464000'
 new_saver = tf.train.import_meta_graph(model_dir + model_name + '.meta')
 new_saver.restore(sess, model_dir + model_name)
 graph = tf.get_default_graph()
@@ -31,7 +31,7 @@ for video_name in video_list:
     unstable_cap = cv2.VideoCapture('data_video/unstable/' + video_name)  
     fps = unstable_cap.get(cv2.CAP_PROP_FPS)
     print('data_video/unstable/' + video_name)
-    videoWriter = cv2.VideoWriter('data_video/output/' + video_name, 
+    videoWriter = cv2.VideoWriter('data_video_local/output/' + video_name, 
             cv2.VideoWriter_fourcc('M','J','P','G'), fps, (width, height))  
     before_frames = []
     after_frames = []

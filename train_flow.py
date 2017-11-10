@@ -121,7 +121,7 @@ with tf.name_scope('datas'):
 
 checkpoint_file = 'data_video/resnet_v2_50.ckpt'
 vtr = slim.get_variables_to_restore(exclude=['stable_net/resnet/resnet_v2_50/conv1', 'stable_net/resnet/fc'])
-vtr = [v for v in vtr if ((not ('Adam' in v.op.name)) and (len(v.op.name) > 18))]
+vtr = [v for v in vtr if ((not (('Adam' in v.op.name) or ('gen_theta' in v.op.name))) and (len(v.op.name) > 18))]
 vtr = {name_in_checkpoint(var):var for var in vtr}
 #print (vtr)
 #variables_to_restore = slim.get_model_variables()
@@ -204,6 +204,8 @@ with sv.managed_session(config=tf.ConfigProto(gpu_options = tf.GPUOptions(per_pr
             time_end = time.time()
             print('disp time:' + str(time_end - time_start) + 's')
 
+        if i % save_freq == 0:
+            saver.save(sess, model_dir + 'model', global_step=i)
         if i % test_freq == 0:
             sum_test_loss = 0.0
             for j in range(test_batches):
@@ -297,8 +299,6 @@ with sv.managed_session(config=tf.ConfigProto(gpu_options = tf.GPUOptions(per_pr
                         loss_displayer: sum_test_loss
                     })
             sv.summary_writer.add_summary(summary, i)
-        if i % save_freq == 0:
-            saver.save(sess, model_dir + 'model', global_step=i)
         time_end = time.time()
         tot_time += time_end - time_start
         t_s = time.time()

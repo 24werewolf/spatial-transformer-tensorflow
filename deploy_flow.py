@@ -25,10 +25,10 @@ new_saver = tf.train.import_meta_graph(model_dir + model_name + '.meta')
 new_saver.restore(sess, model_dir + model_name)
 graph = tf.get_default_graph()
 x_tensor = graph.get_tensor_by_name('stable_net/input/x_tensor:0')
-output = graph.get_tensor_by_name('stable_net/SpatialTransformer/_transform/Reshape_7:0')
-black_pix = graph.get_tensor_by_name('stable_net/SpatialTransformer/_transform/Reshape_6:0')
-#output = graph.get_tensor_by_name('stable_net/inference/SpatialTransformer/_transform/Reshape_7:0')
-#black_pix = graph.get_tensor_by_name('stable_net/inference/SpatialTransformer/_transform/Reshape_6:0')
+#output = graph.get_tensor_by_name('stable_net/SpatialTransformer/_transform/Reshape_7:0')
+#black_pix = graph.get_tensor_by_name('stable_net/SpatialTransformer/_transform/Reshape_6:0')
+output = graph.get_tensor_by_name('stable_net/inference/SpatialTransformer/_transform/Reshape_7:0')
+black_pix = graph.get_tensor_by_name('stable_net/inference/SpatialTransformer/_transform/Reshape_6:0')
 #black_pix = graph.get_tensor_by_name('stable_net/img_loss/StopGradient:0')
 
 #list_f = open('data_video/test_list_deploy', 'r')
@@ -83,13 +83,14 @@ for video_name in video_list:
             in_x = np.concatenate((in_x, before_frames[i]), axis = 3)
         for i in range(after_ch + 1):
             in_x = np.concatenate((in_x, after_frames[i]), axis = 3)
+        '''
         in_x_t = in_x
         for i in range(batch_size - 1):
             in_x_t = np.concatenate((in_x_t, in_x), axis = 0)
-
-        img, black = sess.run([output, black_pix], feed_dict={x_tensor:in_x_t})
+        '''
+        img, black = sess.run([output, black_pix], feed_dict={x_tensor:in_x})
         black = black[0, :, :]
-        img = img[0, :, :, :].reshape(height, width) #* (1 - black) + black * 0.5
+        img = img[0, :, :, :].reshape(height, width)
         frame = img + black * (-1)
         frame = frame.reshape(1, height, width, 1)
         img = ((np.reshape(img, (height, width)) + 0.5) * 255).astype(np.uint8)

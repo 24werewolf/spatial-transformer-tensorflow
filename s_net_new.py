@@ -100,19 +100,21 @@ def warp_pts(x, theta_mat):
     x = tf.concat([x, tf.ones([tf.shape(x)[0], tf.shape(x)[1], 1])], axis=2)
     warpped = tf.matmul(x, tf.transpose(theta_mat, [0, 2, 1]))
     return warpped[:, :, :2] / warpped[:, :, 2, None]
-def get_resnet(x_tensor, reuse, is_training):
+
+def get_resnet(x_tensor, reuse, is_training, x_batch_size):
     with tf.variable_scope('resnet', reuse=reuse):
         with slim.arg_scope(resnet_v2.resnet_arg_scope()):
             resnet, end_points = resnet_v2.resnet_v2_50(x_tensor, global_pool=False, is_training=is_training, reuse=reuse, output_stride=32)
         global_pool = tf.reduce_mean(resnet, [1, 2])
         with tf.variable_scope('fc'):
             theta = output_layer(global_pool, 8)
-        eyes = tf.constant([1, 0, 0, 0, 1, 0, 0, 0, 1], dtype=tf.float32)
-        eyes = tf.reshape(tf.tile(eyes, [batch_size]), [batch_size, -1])
-        ones = tf.constant(0.0, shape=[batch_size, 1])
-        id_loss = tf.reduce_mean(tf.abs(theta)) * id_mul
-        theta = tf.concat([theta, ones], 1)
-        theta = theta + eyes
+        with tf.name_scope('gen_theta'):
+            eyes = tf.Variable([1, 0, 0, 0, 1, 0, 0, 0, 1], dtype=tf.float32, trainable=False)
+            eyes = tf.reshape(tf.tile(eyes, [x_batch_size]), [x_batch_size, -1])
+            ones = tf.zeros(shape=[x_batch_size, 1], dtype=tf.float32)
+            id_loss = tf.reduce_mean(tf.abs(theta)) * id_mul
+            theta = tf.concat([theta, ones], 1)
+            theta = theta + eyes
     return theta, id_loss
 
 def inference_stable_net(reuse):
@@ -139,13 +141,12 @@ def inference_stable_net(reuse):
             x4 = tf.slice(y, [0, 0, 0, 0], [-1, -1, -1, 1])
             tf.summary.image('label', x4)
 
-        theta, id_loss = get_resnet(x_tensor, reuse = reuse, is_training=True)
-        theta_infer, id_loss_infer = get_resnet(x_tensor, reuse = True, is_training=False)
+        theta, id_loss = get_resnet(x_tensor, reuse = reuse, is_training=True, x_batch_size = x_batch_size)
+        theta_infer, id_loss_infer = get_resnet(x_tensor, reuse = True, is_training=False, x_batch_size = x_batch_size)
 
         out_size = (height, width)
         with tf.name_scope('inference'):
             h_trans_infer, black_pix_infer = transformer(x, theta_infer, out_size)
-
         with tf.name_scope('theta_loss'):
             use_theta_loss = tf.placeholder(tf.float32)
             use_black_loss = tf.placeholder(tf.float32)
@@ -183,8 +184,10 @@ def inference_stable_net(reuse):
             
 
         use_theta_only = tf.placeholder(tf.float32)
-        total_loss = theta_loss * theta_mul + ((1 - use_theta_only) * 
-        (img_loss * img_mul + regu_loss * regu_mul + black_pos_loss * black_mul + feature_loss * feature_mul))
+        update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+        with tf.control_dependencies([tf.group(*update_ops)]):
+            total_loss = theta_loss * theta_mul + ((1 - use_theta_only) * 
+            (img_loss * img_mul + regu_loss * regu_mul + black_pos_loss * black_mul + feature_loss * feature_mul))
         '''
         with tf.name_scope('loss'):
             tf.summary.scalar('tot_loss',total_loss)

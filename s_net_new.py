@@ -109,7 +109,7 @@ def get_resnet(x_tensor, reuse, is_training, x_batch_size):
         with tf.variable_scope('fc'):
             theta = output_layer(global_pool, 8)
         with tf.name_scope('gen_theta'):
-            eyes = tf.Variable([1, 0, 0, 0, 1, 0, 0, 0, 1], dtype=tf.float32, trainable=False)
+            eyes = tf.constant([1, 0, 0, 0, 1, 0, 0, 0, 1], dtype=tf.float32)#, trainable=False)
             eyes = tf.reshape(tf.tile(eyes, [x_batch_size]), [x_batch_size, -1])
             ones = tf.zeros(shape=[x_batch_size, 1], dtype=tf.float32)
             id_loss = tf.reduce_mean(tf.abs(theta)) * id_mul

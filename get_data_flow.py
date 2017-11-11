@@ -123,7 +123,7 @@ def read_and_decode(filepath, num_epochs, shuffle=True):
     file_list = []
     for f in file_txt.split(' '):
         file_list.append(filepath + f.strip())
-    filename_queue = tf.train.string_input_producer(file_list, num_epochs=num_epochs, shuffle=shuffle)
+    filename_queue = tf.train.string_input_producer(file_list, num_epochs=None, shuffle=shuffle)
 
     reader = tf.TFRecordReader()
     _, serialized_example = reader.read(filename_queue)

@@ -37,6 +37,55 @@ args = parser.parse_args()
 cnt = 0
 
 logger = utils.get_logger()
+def save_warpped_features(input_data, stable_warpped_pts_batch, theta_mat, output, name):
+    output_prefix = os.path.join(log_dir, name)
+    if not os.path.exists(output_prefix):
+        os.makedirs(output_prefix)
+    def draw(img, pts, mask, color=None):
+        res = img.copy()
+        assert(pts.shape[0] == max_matches)
+        assert(mask.shape[0] == max_matches)
+        pts = (pts / 2 + .5) * img.shape[1::-1]
+        #logger.info('pts={}'.format(pts))
+        pts = pts.astype(np.int32)
+        for i in range(pts.shape[0]):
+            if not mask[i]: continue
+            cv2.circle(res, tuple(pts[i]), 10, tuple(np.random.rand(3) * 255) if color is None else color)
+        return res
+    def cvt_theta_mat(theta_mat):
+        # theta_mat * x = x'
+        # ret * scale_mat * x = scale_mat * x'
+        # ret = scale_mat * theta_mat * scale_mat^-1
+        scale_mat = np.eye(3)
+        scale_mat[0, 0] = width / 2.
+        scale_mat[0, 2] = width / 2.
+        scale_mat[1, 1] = height / 2.
+        scale_mat[1, 2] = height / 2.
+        assert(theta_mat.shape == (3, 3))
+        from numpy.linalg import inv
+        return np.matmul(np.matmul(scale_mat, theta_mat), inv(scale_mat))
+    matches = input_data.feature_matches1
+    stable = input_data.y1
+    mask = input_data.mask1
+    for i in range(matches.shape[0]):
+        global cnt
+        cvt = lambda x: (np.tile(x, [1, 1, 3]) + .5) * 255
+        sta = cvt(stable[i])
+        out = cvt(output[i])
+        error = abs(sta - out)
+        unstable = cvt(input_data.x1[i, :, :, before_ch, None])
+        theta_mat_cvt = cvt_theta_mat(theta_mat[i])
+        np.savetxt(os.path.join(output_prefix, 'theta-%04d.txt'%cnt), theta_mat_cvt)
+
+        img = draw(sta, matches[i, :, :2], mask[i])
+        unstable = draw(unstable, stable_warpped_pts_batch[i], mask[i], (255, 0, 0))
+        unstable = draw(unstable, input_data.feature_matches1[i, :, 2:], mask[i], (0, 255, 0))
+        res = np.concatenate([img, out], axis=1)
+        res1 = np.concatenate([error, unstable], axis=1)
+        res = np.concatenate([res, res1], axis=0)
+        cv2.imwrite(os.path.join(output_prefix, 'img-%04d.jpg'%cnt), res)
+        cnt = (cnt + 1) % 20
+
 def show_image(name, img, min_v = 0, max_v = 1):
     #img_ = tf.pad(img, [[0, 0], [1, 1], [1, 1], [0, 0]], constant_values = max_v)
     #img_ = tf.pad(img_, [[0, 0], [1, 1], [1, 1], [0, 0]], constant_values = min_v)
@@ -135,6 +184,7 @@ saver = tf.train.Saver()
 run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
 run_metadata = tf.RunMetadata()
 sv = tf.train.Supervisor(logdir=log_dir, save_summaries_secs=0, saver=None)
+Data = namedtuple('Data', ['x1', 'y1', 'x2', 'y2', 'flow', 'feature_matches1', 'mask1', 'feature_matches2', 'mask2'])
 with sv.managed_session(config=tf.ConfigProto(gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=args.gpu_memory_fraction))) as sess:
     #sess.run(init_all)
     #threads = tf.train.start_queue_runners(sess=sess)
@@ -209,89 +259,37 @@ with sv.managed_session(config=tf.ConfigProto(gpu_options = tf.GPUOptions(per_pr
         if i % test_freq == 0:
             sum_test_loss = 0.0
             for j in range(test_batches):
-                Data = namedtuple('Data', ['x1', 'y1', 'x2', 'y2', 'flow', 'feature_matches1', 'mask1', 'feature_matches2', 'mask2'])
-                input_tensor = Data(test_x1_batch, test_y1_batch, test_x2_batch, test_y2_batch, test_flow_batch, 
-                    test_feature_matches1_batch, test_mask1_batch, test_feature_matches2_batch, test_mask2_batch)
-                input_data = Data(**sess.run(input_tensor._asdict()))
                 # test_batch_x1s, test_batch_y1s, test_batch_x2s, test_batch_y2s, test_batch_flows, \
                 #     test_batch_feature_matches1, test_batch_mask1, test_batch_feature_matches2, test_batch_mask2 = sess.run(
                     # [test_x1_batch, test_y1_batch, test_x2_batch, test_y2_batch, test_flow_batch, 
                     # test_feature_matches1_batch, test_mask1_batch, test_feature_matches2_batch, test_mask2_batch])
-                matches = input_data.feature_matches1
-                stable = input_data.y1
-                mask = input_data.mask1
-                loss, stable_warpped_pts_batch, theta_mat, output = \
-                    sess.run([total_loss, ret1['stable_warpped'], ret1['theta_mat'], ret1['output']],
-                            feed_dict={
-                                ret1['x_tensor']: input_data.x1,
-                                ret1['y']: input_data.y1,
-                                ret1['mask']: input_data.mask1,
-                                ret1['matches']: input_data.feature_matches1,
-                                ret2['x_tensor']: input_data.x2,
-                                ret2['y']: input_data.y2,
-                                ret2['mask']: input_data.mask2,
-                                ret2['matches']: input_data.feature_matches2,
-                                flow: input_data.flow,
-                                ret1['use_theta_loss']: use_theta,
-                                ret2['use_theta_loss']: use_theta,
-                                use_temp_loss: use_temp,
-                                ret1['use_black_loss']: use_black,
-                                ret2['use_black_loss']: use_black,
-                                ret1['use_theta_only']: theta_only,
-                                ret2['use_theta_only']: theta_only
-                            })
-                def save_warpped_features(mask):
-                    def draw(img, pts, mask, color=None):
-                        res = img.copy()
-                        assert(pts.shape[0] == max_matches)
-                        assert(mask.shape[0] == max_matches)
-                        pts = (pts / 2 + .5) * img.shape[1::-1]
-                        #logger.info('pts={}'.format(pts))
-                        pts = pts.astype(np.int32)
-                        for i in range(pts.shape[0]):
-                            if not mask[i]: continue
-                            cv2.circle(res, tuple(pts[i]), 10, tuple(np.random.rand(3) * 255) if color is None else color)
-                        return res
-                    def cvt_theta_mat(theta_mat):
-                        # theta_mat * x = x'
-                        # ret * scale_mat * x = scale_mat * x'
-                        # ret = scale_mat * theta_mat * scale_mat^-1
-                        scale_mat = np.eye(3)
-                        scale_mat[0, 0] = width / 2.
-                        scale_mat[0, 2] = width / 2.
-                        scale_mat[1, 1] = height / 2.
-                        scale_mat[1, 2] = height / 2.
-                        assert(theta_mat.shape == (3, 3))
-                        from numpy.linalg import inv
-                        return np.matmul(np.matmul(scale_mat, theta_mat), inv(scale_mat))
-                    mask = mask.copy()
-                    for i in range(matches.shape[0]):
-                        global cnt
-                        #mask = np.logical_and(mask, (np.random.uniform(0, 1, mask.shape) > 0.8))
-                        # for j in range(mask[i].shape[0]):
-                        #     if mask[i, j] and np.random.normal(0, 1) < 0.8:
-                        #         mask[i, j] = False
-                        cvt = lambda x: (np.tile(x, [1, 1, 3]) + .5) * 255
-                        img = cvt(stable[i])
-                        out = cvt(output[i])
-                        unstable = cvt(input_data.x1[i, :, :, before_ch, None])
-                        # logger.info('img.shape={}, {}, mask.shape={}'.format(img.shape, img.shape[1::-1], mask.shape))
-                        # logger.info('stable_warpped_pts_batchimg.shape={}, matches.shape={}'.format(stable_warpped_pts_batch.shape, matches.shape))
-                        theta_mat_cvt = cvt_theta_mat(theta_mat[i])
-                        np.savetxt(os.path.join(log_dir, 'theta-%04d.txt'%cnt), theta_mat_cvt)
-                        warpped = cv2.warpPerspective(img, theta_mat_cvt, img.shape[1::-1])
-                        img = draw(img, matches[i, :, :2], mask[i])
-                        warpped = draw(warpped, stable_warpped_pts_batch[i], mask[i])
-                        unstable = draw(unstable, stable_warpped_pts_batch[i], mask[i], (255, 0, 0))
-                        unstable = draw(unstable, input_data.feature_matches1[i, :, 2:], mask[i], (0, 255, 0))
-                        res = np.concatenate([img, out], axis=1)
-                        res1 = np.concatenate([warpped, unstable], axis=1)
-                        res = np.concatenate([res, res1], axis=0)
-                        cv2.imwrite(os.path.join(log_dir, 'test-%04d.jpg'%cnt), res)
-                        cnt = (cnt + 1) % 20
-                save_warpped_features(mask)
-
+                def fetch_test_data(input_data):
+                     return sess.run([total_loss, ret1['stable_warpped'], ret1['theta_mat'], ret1['output']],
+                                feed_dict={
+                                    ret1['x_tensor']: input_data.x1,
+                                    ret1['y']: input_data.y1,
+                                    ret1['mask']: input_data.mask1,
+                                    ret1['matches']: input_data.feature_matches1,
+                                    ret2['x_tensor']: input_data.x2,
+                                    ret2['y']: input_data.y2,
+                                    ret2['mask']: input_data.mask2,
+                                    ret2['matches']: input_data.feature_matches2,
+                                    flow: input_data.flow,
+                                    ret1['use_theta_loss']: use_theta,
+                                    ret2['use_theta_loss']: use_theta,
+                                    use_temp_loss: use_temp,
+                                    ret1['use_black_loss']: use_black,
+                                    ret2['use_black_loss']: use_black,
+                                    ret1['use_theta_only']: theta_only,
+                                    ret2['use_theta_only']: theta_only
+                                })
+                input_tensor = Data(test_x1_batch, test_y1_batch, test_x2_batch, test_y2_batch, test_flow_batch, 
+                    test_feature_matches1_batch, test_mask1_batch, test_feature_matches2_batch, test_mask2_batch)
+                input_data = Data(**sess.run(input_tensor._asdict()))
+                loss, stable_warpped_pts_batch, theta_mat, output = fetch_test_data(input_data)
+                save_warpped_features(input_data, stable_warpped_pts_batch, theta_mat, output, name='test')
                 sum_test_loss += loss
+
             sum_test_loss /= test_batches
             print("Test Loss: " + str(sum_test_loss))
             summary = sess.run(test_merged,
@@ -299,6 +297,13 @@ with sv.managed_session(config=tf.ConfigProto(gpu_options = tf.GPUOptions(per_pr
                         loss_displayer: sum_test_loss
                     })
             sv.summary_writer.add_summary(summary, i)
+
+            input_tensor = Data(x1_batch, y1_batch, x2_batch, y2_batch, flow_batch, 
+                feature_matches1_batch, mask1_batch, feature_matches2_batch, mask2_batch)
+            input_data = Data(**sess.run(input_tensor._asdict()))
+            loss, stable_warpped_pts_batch, theta_mat, output = fetch_test_data(input_data)
+            save_warpped_features(input_data, stable_warpped_pts_batch, theta_mat, output, name='train')
+            
         time_end = time.time()
         tot_time += time_end - time_start
         t_s = time.time()

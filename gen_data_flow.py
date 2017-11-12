@@ -7,11 +7,15 @@ from config import *
 import sys
 import struct
 import feature_fetcher
+import os
 
 data_names = ["test", "train"]
 data_path = "data6/"
+before_ch = 7
+after_ch = 7
+tot_ch = before_ch + after_ch + 1
 for dn in data_names:
-    list_f = open('data_video/' + dn + '_list', 'r')
+    list_f = open('data_video/' + dn + '_list_', 'r')
     temp = list_f.read()
     video_list = temp.split('\n')
 
@@ -30,11 +34,13 @@ for dn in data_names:
 
         stable_cap = cv2.VideoCapture('data_video/stable/' + video_name)  
         unstable_cap = cv2.VideoCapture('data_video/unstable/' + video_name)  
+        assert(os.path.isfile('data_video/stable/' + video_name))
+        assert(os.path.isfile('data_video/unstable/' + video_name))
         unstable_frames = []
         stable_frames = []
         print('data_video/stable/' + video_name)
         for i in range(tot_ch + 1):
-            ret, frame = stable_cap.read()  
+            ret, frame = stable_cap.read()
             stable_frames.append(cvt_img2train(frame, crop_rate))
             ret, frame = unstable_cap.read()
             unstable_frames.append(cvt_img2train(frame, 1))

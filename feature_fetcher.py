@@ -4,7 +4,7 @@ import re
 import numpy as np
 
 BaseDir = './output/'
-regexp = re.compile(r'(\d+).mp4.avi')
+regexp = re.compile(r'(\d+)(\.mp4)?\.avi')
 
 ori_width, ori_height = 1280, 720
 

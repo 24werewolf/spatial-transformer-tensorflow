@@ -4,6 +4,7 @@ from config import *
 from PIL import Image
 import cv2
 import time
+import os
 import argparse
 
 parser = argparse.ArgumentParser()
@@ -11,6 +12,11 @@ parser.add_argument('--model-dir')
 parser.add_argument('--model-name')
 parser.add_argument('--before-ch', type=int)
 parser.add_argument('--after-ch', type=int)
+parser.add_argument('--output-dir', default='data_video_local')
+parser.add_argument('--infer-with-stable', action='store_true')
+parser.add_argument('--infer-with-last', action='store_true')
+parser.add_argument('--test-list', default='data_video/test_list')
+parser.add_argument('--train-list', default='data_video/train_list_deploy')
 args = parser.parse_args()
 
 start_with_stable = True
@@ -32,13 +38,37 @@ black_pix = graph.get_tensor_by_name('stable_net/inference/SpatialTransformer/_t
 #black_pix = graph.get_tensor_by_name('stable_net/img_loss/StopGradient:0')
 
 #list_f = open('data_video/test_list_deploy', 'r')
-list_f = open('data_video/test_list_deploy', 'r')
+list_f = open(args.test_list, 'r')
 temp = list_f.read()
 video_list = temp.split('\n')
 
-list_f = open('data_video/train_list_deploy', 'r')
+list_f = open(args.train_list, 'r')
 temp = list_f.read()
 video_list.extend(temp.split('\n'))
+
+def make_dirs(path):
+    if not os.path.exists(path): os.makedirs(path)
+
+def draw_imgs(net_output, stable_frame, unstable_frame):
+    cvt2int32 = lambda x: x.astype(np.int32)
+    assert(net_output.ndim == 2)
+    assert(stable_frame.ndim == 2)
+    assert(unstable_frame.ndim == 2)
+
+    net_output = cvt2int32(net_output)
+    stable_frame = cvt2int32(stable_frame)
+    unstable_frame = cvt2int32(unstable_frame)
+    output_minus_input  = abs(net_output - unstable_frame)
+    output_minus_stable = abs(net_output - stable_frame)
+    img_top    = np.concatenate([net_output,         output_minus_stable], axis=1)
+    img_bottom = np.concatenate([output_minus_input, unstable_frame], axis=1)
+    img = np.concatenate([img_top, img_bottom], axis=0).astype(np.uint8)
+    return cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+
+production_dir = os.path.join(args.output_dir, 'output')
+visual_dir = os.path.join(args.output_dir, 'output-vis')
+make_dirs(production_dir)
+make_dirs(visual_dir)
 
 for video_name in video_list:
     if (video_name == ""):
@@ -47,8 +77,10 @@ for video_name in video_list:
     unstable_cap = cv2.VideoCapture('data_video/unstable/' + video_name)  
     fps = unstable_cap.get(cv2.CAP_PROP_FPS)
     print('data_video/unstable/' + video_name)
-    videoWriter = cv2.VideoWriter('data_video_local/output/' + video_name, 
-            cv2.VideoWriter_fourcc('M','J','P','G'), fps, (width, height))  
+    videoWriter = cv2.VideoWriter(os.path.join(production_dir, video_name), 
+            cv2.VideoWriter_fourcc('M','J','P','G'), fps, (width, height))
+    videoWriterVis = cv2.VideoWriter(os.path.join(visual_dir, video_name), 
+            cv2.VideoWriter_fourcc('M','J','P','G'), fps, (width * 2, height * 2))
     before_frames = []
     after_frames = []
     print(video_name)
@@ -73,11 +105,19 @@ for video_name in video_list:
             temp = before_frames[i]
             temp = ((np.reshape(temp, (height, width)) + 0.5) * 255).astype(np.uint8)
             videoWriter.write(cv2.cvtColor(temp, cv2.COLOR_GRAY2BGR))
+            temp = np.concatenate([temp, np.zeros_like(temp)], axis=1)
+            temp = np.concatenate([temp, np.zeros_like(temp)], axis=0)
+            videoWriterVis.write(cv2.cvtColor(temp, cv2.COLOR_GRAY2BGR))
         for i in range(after_ch + 1):
             ret, frame = unstable_cap.read()
             after_frames.append(cvt_img2train(frame, 1))
-    len = 0
+    length = 0
     while(True):
+        _, stable_cap_frame = stable_cap.read()
+        stable_train_frame = cvt_img2train(stable_cap_frame, crop_rate)
+        cvt_train2img = lambda x: ((np.reshape(x, (height, width)) + 0.5) * 255).astype(np.uint8)
+        stable_frame = cvt_train2img(stable_train_frame)
+        unstable_frame = cvt_train2img(after_frames[0])
         in_x = before_frames[0]
         for i in range(1, before_ch):
             in_x = np.concatenate((in_x, before_frames[i]), axis = 3)
@@ -94,16 +134,24 @@ for video_name in video_list:
         frame = img + black * (-1)
         frame = frame.reshape(1, height, width, 1)
         img = ((np.reshape(img, (height, width)) + 0.5) * 255).astype(np.uint8)
+        net_output = img
         img = cv2.cvtColor(img,cv2.COLOR_GRAY2BGR)
         videoWriter.write(img)
+        videoWriterVis.write(draw_imgs(net_output, stable_frame, unstable_frame))
 
         ret, frame_unstable = unstable_cap.read() 
         if (not ret):
             break
-        len = len + 1
-        if (len % 10 == 0):
-            print("len: " + str(len))       
-        before_frames.append(frame)
+        length = length + 1
+        if (length % 10 == 0):
+            print("length: " + str(length))       
+        if args.infer_with_stable:
+            before_frames.append(stable_train_frame)
+        else:
+            before_frames.append(frame)
+        if args.infer_with_last:
+            for i in range(len(before_frames)):
+                before_frames[i] = before_frames[-1]
         before_frames.pop(0)
         after_frames.append(cvt_img2train(frame_unstable, 1))
         after_frames.pop(0)

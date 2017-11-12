@@ -1,3 +1,4 @@
+# pylint: disable=E1101
 import numpy as np  
 import cv2  
 from collections import deque
@@ -15,13 +16,23 @@ parser.add_argument('--start', type=str)
 parser.add_argument('--start-file-num', type=int, default=0)
 args = parser.parse_args()
 
-#data_names = ["test", "train"]
-data_names = ["train"]
-data_path = "data6/"
-before_ch = 7
-after_ch = 7
-tot_ch = before_ch + after_ch + 1
+data_names = ["test", "train"]
+data_names = ["test"]
+data_path = "data7/"
+before_ch = 32
+#after_ch = 0
+tot_ch = before_ch + 1
+indices = [0, 1, 2, 4, 8, 16, 32]
+# data_path = "data8/"
+# before_ch = 31
+# #after_ch = 0
+# tot_ch = before_ch + 1
+# indices = [0, 1, 7, 13, 19, 25, 31]
 for dn in data_names:
+    output_data_path = os.path.join(data_path + dn)
+    if not os.path.exists(output_data_path):
+        os.makedirs(output_data_path)
+    print('Output data to ', output_data_path)
     list_f = open('data_video/' + dn + '_list_', 'r')
     temp = list_f.read()
     video_list = temp.split('\n')
@@ -66,12 +77,21 @@ for dn in data_names:
                 print(length)
             #if (length == 30):
             #    break
-            stable = stable_frames[0] #[0:before_ch+2]=[0:9], 9
-            for i in range(1, before_ch + 2):
-                stable = np.concatenate((stable, stable_frames[i]), axis=3)
-            unstable = unstable_frames[before_ch] #[before_ch:tot_ch+1]=[7:16], 9
-            for i in range(before_ch + 1, tot_ch + 1):
-                unstable = np.concatenate((unstable, unstable_frames[i]), axis=3)
+            def get_stable_unstable_with_offset(offset):
+                stables = []
+                cur_frame_idx = before_ch + offset
+                for i in indices:
+                    stables.append(stable_frames[cur_frame_idx - i])
+                stable = np.concatenate(stables, axis=3)
+                unstable = unstable_frames[cur_frame_idx]
+                return stable, unstable
+            # for i in range(before_ch + 1, tot_ch + 1):
+            #     unstable = np.concatenate((unstable, unstable_frames[i]), axis=3)
+            stable, unstable = zip(get_stable_unstable_with_offset(0), get_stable_unstable_with_offset(1))
+            stable = np.array(stable)
+            unstable = np.array(unstable)
+            assert(stable.shape == (2, 1, height, width, len(indices)))
+            assert(unstable.shape == (2, 1, height, width, 1))
             #calc flow_x
             flow = np.zeros((height, width, 2), dtype=np.float32)
             for xx in range(height):

@@ -13,4 +13,5 @@ def fetch(video_name, frame_id):
     path = os.path.join(BaseDir, video_name, '{:04d}'.format(frame_id))
     mat = scipy.io.loadmat(path)
     print('Read {}. Shape={}'.format(path, mat['res'].shape))
-    return (mat['res'].astype(np.float32) / [ori_width, ori_height, ori_width, ori_height] - 0.5) * 2
+    return (mat['res'].astype(np.float32) / [ori_width, ori_height, ori_width, ori_height] - 0.5) * 2\
+            if mat['res'].shape != (0,0) else mat['res'].astype(np.float32)

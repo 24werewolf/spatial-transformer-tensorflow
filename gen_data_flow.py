@@ -8,8 +8,15 @@ import sys
 import struct
 import feature_fetcher
 import os
+import re
+import argparse
+parser = argparse.ArgumentParser()
+parser.add_argument('--start', type=str)
+parser.add_argument('--start-file-num', type=int, default=0)
+args = parser.parse_args()
 
-data_names = ["test", "train"]
+#data_names = ["test", "train"]
+data_names = ["train"]
 data_path = "data6/"
 before_ch = 7
 after_ch = 7
@@ -20,13 +27,21 @@ for dn in data_names:
     video_list = temp.split('\n')
 
     record_num = 0
-    file_num = 0
+    file_num = args.start_file_num
     file_list = str(file_num) + ".tfrecords"
     writer = tf.python_io.TFRecordWriter(data_path + dn + "/" + str(file_num) + ".tfrecords")
 
-    for video_name in video_list:
+    start = 0
+    if args.start is not None:
+        for idx, video_name in enumerate(video_list):
+            if video_name == args.start:
+                start = idx
+                break
+    for idx in range(start, len(video_list)):
+        video_name = video_list[idx]
         if (video_name == ""):
             break
+        print('processing video '+video_name)
         flowfile = open('data_video/flow/' + video_name[:-4] + '.bin', 'rb')
         flowdata = flowfile.read()
         float_cnt = 4

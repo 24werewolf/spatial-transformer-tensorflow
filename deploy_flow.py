@@ -19,7 +19,11 @@ parser.add_argument('--infer-with-last', action='store_true')
 parser.add_argument('--test-list', nargs='+', default=['data_video/test_list', 'data_video/train_list_deploy'])
 #parser.add_argument('--train-list', default='data_video/train_list_deploy')
 parser.add_argument('--prefix', default='data_video')
+parser.add_argument('--max-span', type=int, default=1)
+parser.add_argument('--random-black', action='store_true')
 args = parser.parse_args()
+
+MaxSpan = args.max_span
 
 start_with_stable = True
 
@@ -69,6 +73,12 @@ def draw_imgs(net_output, stable_frame, unstable_frame):
     img = np.concatenate([img_top, img_bottom], axis=0).astype(np.uint8)
     return cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
 
+def getNext(delta, bound, speed = 5):
+    # tmp = delta + speed
+    # if tmp >= bound or tmp < 0: speed *= -1
+    # return delta + speed, speed
+    return np.random.randint(0, bound), 5
+
 production_dir = os.path.join(args.output_dir, 'output')
 visual_dir = os.path.join(args.output_dir, 'output-vis')
 make_dirs(production_dir)
@@ -116,10 +126,18 @@ for video_name in video_list:
             ret, frame = unstable_cap.read()
             after_frames.append(cvt_img2train(frame, 1))
     length = 0
+    in_xs = []
+    delta = 0
+    speed = 2
     try:
         while(True):
             _, stable_cap_frame = stable_cap.read()
             stable_train_frame = cvt_img2train(stable_cap_frame, crop_rate)
+            if args.random_black:
+                delta, speed = getNext(delta, 150, speed)
+                print(delta, speed)
+                #stable_train_frame[:, :, delta:width, ...] = stable_train_frame[:, :, 0:width-delta, ...]
+                stable_train_frame[:, :, :delta, ...] = -1
             cvt_train2img = lambda x: ((np.reshape(x, (height, width)) + 0.5) * 255).astype(np.uint8)
             stable_frame = cvt_train2img(stable_train_frame)
             unstable_frame = cvt_train2img(after_frames[0])
@@ -133,6 +151,15 @@ for video_name in video_list:
             for i in range(batch_size - 1):
                 in_x_t = np.concatenate((in_x_t, in_x), axis = 0)
             '''
+            # for max span
+            if MaxSpan != 1:
+                in_xs.append(in_x)
+                if len(in_xs) > MaxSpan: 
+                    in_xs = in_xs[-1:]
+                    print('cut')
+                in_x = in_xs[0].copy()
+                in_x[0, ..., before_ch] = after_frames[0][..., 0]
+
             img, black = sess.run([output, black_pix], feed_dict={x_tensor:in_x})
             black = black[0, :, :]
             img = img[0, :, :, :].reshape(height, width)

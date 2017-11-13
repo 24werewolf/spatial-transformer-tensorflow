@@ -16,8 +16,8 @@ parser.add_argument('--start', type=str)
 parser.add_argument('--start-file-num', type=int, default=0)
 args = parser.parse_args()
 
-data_names = ["test", "train"]
-data_names = ["test"]
+#data_names = ["test", "train"]
+data_names = ["train"]
 data_path = "data7/"
 before_ch = 32
 #after_ch = 0
@@ -129,6 +129,7 @@ for dn in data_names:
                 writer.close()
                 file_list += " " + str(file_num) + ".tfrecords"
                 writer = tf.python_io.TFRecordWriter(data_path + dn + "/" + str(file_num) + ".tfrecords")
+                print('new record:', file_num)
 
             ret, frame_stable = stable_cap.read()  
             ret, frame_unstable = unstable_cap.read()

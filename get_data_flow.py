@@ -4,7 +4,7 @@ import random
 from config import *
 import utils
 logger = utils.get_logger()
-
+assert(after_ch == 0)
 def get_rand_para(seed): 
     h = int(height / random_crop_rate)
     w = int(width / random_crop_rate)
@@ -135,8 +135,17 @@ def read_and_decode(filepath, num_epochs, shuffle=True):
                                            'feature_matches1': tf.VarLenFeature(tf.float32),
                                            'feature_matches2': tf.VarLenFeature(tf.float32),
                                        })
-    stable_ = tf.reshape(tf.sparse_tensor_to_dense(features['stable']), [height, width, -1])[:, :, -(before_ch + 2):]
-    unstable_ = tf.reshape(tf.sparse_tensor_to_dense(features['unstable']), [height, width, -1])[:, :, :after_ch + 2]
+    stable_ = tf.reshape(tf.sparse_tensor_to_dense(features['stable']), [2, height, width, -1])[:, :, :, -(before_ch + 1):]
+    unstable_ = tf.reshape(tf.sparse_tensor_to_dense(features['unstable']), [2, height, width, -1])#[:, :, :after_ch + 2]
+    with tf.control_dependencies([
+                                tf.assert_equal(tf.shape(stable_[0]), tf.constant((height, width, before_ch + 1))),
+                                tf.assert_equal(tf.shape(unstable_[0]), tf.constant((height, width, 1))),
+                                ]):
+        stable_ = tf.identity(stable_)
+    logger.info('stable_[0].shape={}'.format(stable_[0].shape))
+    logger.info('unstable_[0].shape={}'.format(unstable_[0].shape))
+    stable_ = tf.concat([stable_[0], stable_[1]], axis=2)
+    unstable_ = tf.concat([unstable_[0], unstable_[1]], axis=2)
     flow_ = tf.reshape(tf.sparse_tensor_to_dense(features['flow']), [height, width, -1])[:, :, :2]
 
     feature_matches1_ = tf.reshape(tf.sparse_tensor_to_dense(features['feature_matches1']), [-1, 4])
@@ -144,8 +153,9 @@ def read_and_decode(filepath, num_epochs, shuffle=True):
     num_matches1_ = tf.shape(feature_matches1_)[0]
     num_matches2_ = tf.shape(feature_matches2_)[0]
     logger.info('feature_matches1_.shape={}, feature_matches2_.shape=q{}'.format(feature_matches1_.shape, feature_matches2_.shape))
-    with tf.control_dependencies([tf.assert_less(num_matches1_, tf.constant(max_matches)), \
-                                tf.assert_less(num_matches2_, tf.constant(max_matches))]):
+    with tf.control_dependencies([tf.assert_less(num_matches1_, tf.constant(max_matches)),
+                                tf.assert_less(num_matches2_, tf.constant(max_matches)),
+                                ]):
         feature_matches1_ = tf.identity(feature_matches1_)
     feature_matches1_ = tf.pad(feature_matches1_, ((0, max_matches - num_matches1_), (0, 0)))
     feature_matches2_ = tf.pad(feature_matches2_, ((0, max_matches - num_matches2_), (0, 0)))
@@ -156,7 +166,7 @@ def read_and_decode(filepath, num_epochs, shuffle=True):
 
     seed = random.randint(0, 2**31 - 1)
     para = get_rand_para(seed) 
-    for i in range(before_ch + 2):
+    for i in range((before_ch + 1) * 2):
         temp = tf.slice(stable_, [0, 0, i], [-1, -1, 1])
         if (i == 0):
             stable = warp_img(temp, seed, para)
@@ -171,9 +181,9 @@ def read_and_decode(filepath, num_epochs, shuffle=True):
     x1 = tf.concat([add_mask(tf.slice(stable, [0, 0, 0], [-1, -1, before_ch])), 
                     tf.slice(unstable, [0, 0, 0], [-1, -1, after_ch + 1])], 2)
     y1 = tf.slice(stable, [0, 0, before_ch], [-1, -1, 1])
-    x2 = tf.concat([add_mask(tf.slice(stable, [0, 0, 1], [-1, -1, before_ch])), 
+    x2 = tf.concat([add_mask(tf.slice(stable, [0, 0, before_ch + 1], [-1, -1, before_ch])), 
                     tf.slice(unstable, [0, 0, 1], [-1, -1, after_ch + 1])], 2)
-    y2 = tf.slice(stable, [0, 0, before_ch + 1], [-1, -1, 1])
+    y2 = tf.slice(stable, [0, 0, 2 * before_ch + 1], [-1, -1, 1])
     flow = warp_flow(flow_, para)
     feature_matches1, mask1 = warp_point(feature_matches1_, mask1_, para)
     feature_matches2, mask2 = warp_point(feature_matches2_, mask2_, para)

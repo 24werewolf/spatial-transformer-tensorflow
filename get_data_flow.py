@@ -179,12 +179,12 @@ def read_and_decode(filepath, num_epochs, shuffle=True):
             unstable = warp_img(temp, seed, para)
         else:
             unstable = tf.concat([unstable, warp_img(temp, seed, para)], 2)
-    x1 = tf.concat([add_mask(tf.slice(stable, [0, 0, 0], [-1, -1, before_ch])), 
+    x1 = tf.concat([add_mask(tf.slice(stable, [0, 0, 1], [-1, -1, before_ch])), 
                     tf.slice(unstable, [0, 0, 0], [-1, -1, after_ch + 1])], 2)
-    y1 = tf.slice(stable, [0, 0, before_ch], [-1, -1, 1])
-    x2 = tf.concat([add_mask(tf.slice(stable, [0, 0, before_ch + 1], [-1, -1, before_ch])), 
+    y1 = tf.slice(stable, [0, 0, 0], [-1, -1, 1])
+    x2 = tf.concat([add_mask(tf.slice(stable, [0, 0, before_ch + 2], [-1, -1, before_ch])), 
                     tf.slice(unstable, [0, 0, 1], [-1, -1, after_ch + 1])], 2)
-    y2 = tf.slice(stable, [0, 0, 2 * before_ch + 1], [-1, -1, 1])
+    y2 = tf.slice(stable, [0, 0, before_ch + 1], [-1, -1, 1])
     flow = warp_flow(flow_, para)
     feature_matches1, mask1 = warp_point(feature_matches1_, mask1_, para)
     feature_matches2, mask2 = warp_point(feature_matches2_, mask2_, para)

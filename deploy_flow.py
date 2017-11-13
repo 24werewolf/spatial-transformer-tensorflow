@@ -20,7 +20,7 @@ parser.add_argument('--test-list', nargs='+', default=['data_video/test_list', '
 #parser.add_argument('--train-list', default='data_video/train_list_deploy')
 parser.add_argument('--prefix', default='data_video')
 parser.add_argument('--max-span', type=int, default=1)
-parser.add_argument('--random-black', action='store_true')
+parser.add_argument('--random-black', type=int, default=5)
 args = parser.parse_args()
 
 MaxSpan = args.max_span
@@ -57,7 +57,9 @@ for list_path in args.test_list:
 def make_dirs(path):
     if not os.path.exists(path): os.makedirs(path)
 
-def draw_imgs(net_output, stable_frame, unstable_frame):
+cvt_train2img = lambda x: ((np.reshape(x, (height, width)) + 0.5) * 255).astype(np.uint8)
+
+def draw_imgs(net_output, stable_frame, unstable_frame, inputs):
     cvt2int32 = lambda x: x.astype(np.int32)
     assert(net_output.ndim == 2)
     assert(stable_frame.ndim == 2)
@@ -66,18 +68,20 @@ def draw_imgs(net_output, stable_frame, unstable_frame):
     net_output = cvt2int32(net_output)
     stable_frame = cvt2int32(stable_frame)
     unstable_frame = cvt2int32(unstable_frame)
+    last_frame = cvt2int32(cvt_train2img(inputs[..., before_ch - 1]))
     output_minus_input  = abs(net_output - unstable_frame)
     output_minus_stable = abs(net_output - stable_frame)
+    output_minus_last   = abs(net_output - last_frame)
     img_top    = np.concatenate([net_output,         output_minus_stable], axis=1)
-    img_bottom = np.concatenate([output_minus_input, unstable_frame], axis=1)
+    img_bottom = np.concatenate([output_minus_input, output_minus_last], axis=1)
     img = np.concatenate([img_top, img_bottom], axis=0).astype(np.uint8)
     return cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
 
 def getNext(delta, bound, speed = 5):
-    # tmp = delta + speed
-    # if tmp >= bound or tmp < 0: speed *= -1
-    # return delta + speed, speed
-    return np.random.randint(0, bound), 5
+    tmp = delta + speed
+    if tmp >= bound or tmp < 0: speed *= -1
+    return delta + speed, speed
+    # return np.random.randint(0, bound), 5
 
 production_dir = os.path.join(args.output_dir, 'output')
 visual_dir = os.path.join(args.output_dir, 'output-vis')
@@ -128,17 +132,16 @@ for video_name in video_list:
     length = 0
     in_xs = []
     delta = 0
-    speed = 2
+    speed = args.random_black
     try:
         while(True):
             _, stable_cap_frame = stable_cap.read()
             stable_train_frame = cvt_img2train(stable_cap_frame, crop_rate)
-            if args.random_black:
-                delta, speed = getNext(delta, 150, speed)
+            if args.random_black is not None:
+                delta, speed = getNext(delta, 50, speed)
                 print(delta, speed)
-                #stable_train_frame[:, :, delta:width, ...] = stable_train_frame[:, :, 0:width-delta, ...]
+                stable_train_frame[:, :, delta:width, ...] = stable_train_frame[:, :, 0:width-delta, ...]
                 stable_train_frame[:, :, :delta, ...] = -1
-            cvt_train2img = lambda x: ((np.reshape(x, (height, width)) + 0.5) * 255).astype(np.uint8)
             stable_frame = cvt_train2img(stable_train_frame)
             unstable_frame = cvt_train2img(after_frames[0])
             in_x = before_frames[0]
@@ -169,7 +172,7 @@ for video_name in video_list:
             net_output = img
             img = cv2.cvtColor(img,cv2.COLOR_GRAY2BGR)
             videoWriter.write(img)
-            videoWriterVis.write(draw_imgs(net_output, stable_frame, unstable_frame))
+            videoWriterVis.write(draw_imgs(net_output, stable_frame, unstable_frame, in_x))
 
             ret, frame_unstable = unstable_cap.read() 
             if (not ret):

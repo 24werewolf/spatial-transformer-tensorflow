@@ -20,7 +20,7 @@ parser.add_argument('--test-list', nargs='+', default=['data_video/test_list', '
 #parser.add_argument('--train-list', default='data_video/train_list_deploy')
 parser.add_argument('--prefix', default='data_video')
 parser.add_argument('--max-span', type=int, default=1)
-parser.add_argument('--random-black', type=int, default=5)
+parser.add_argument('--random-black', type=int, default=None)
 args = parser.parse_args()
 
 MaxSpan = args.max_span

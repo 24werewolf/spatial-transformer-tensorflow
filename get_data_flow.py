@@ -135,7 +135,8 @@ def read_and_decode(filepath, num_epochs, shuffle=True):
                                            'feature_matches1': tf.VarLenFeature(tf.float32),
                                            'feature_matches2': tf.VarLenFeature(tf.float32),
                                        })
-    stable_ = tf.reshape(tf.sparse_tensor_to_dense(features['stable']), [2, height, width, -1])[:, :, :, -(before_ch + 1):]
+    stable_input = tf.reshape(tf.sparse_tensor_to_dense(features['stable']), [2, height, width, -1])
+    stable_ = tf.concat((stable_input[..., 0, None], stable_input[:, :, :, -before_ch:]), axis=3)
     unstable_ = tf.reshape(tf.sparse_tensor_to_dense(features['unstable']), [2, height, width, -1])#[:, :, :after_ch + 2]
     with tf.control_dependencies([
                                 tf.assert_equal(tf.shape(stable_[0]), tf.constant((height, width, before_ch + 1))),

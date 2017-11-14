@@ -25,7 +25,7 @@ args = parser.parse_args()
 
 MaxSpan = args.max_span
 
-start_with_stable = True
+start_with_stable = False#True
 
 sess = tf.Session()
 

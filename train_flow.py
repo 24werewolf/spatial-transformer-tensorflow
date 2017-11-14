@@ -22,7 +22,7 @@ import get_data_flow
 from config import *
 import time
 #import s_net
-import s_net_new as s_net
+import s_net_bundle as s_net
 from tensorflow.python.client import timeline
 import utils
 from collections import namedtuple

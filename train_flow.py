@@ -221,7 +221,7 @@ with sv.managed_session(config=tf.ConfigProto(gpu_options = tf.GPUOptions(per_pr
             theta_only = 1
         else:
             theta_only = 0
-        if i % disp_freq == 0:
+        if i % disp_freq == 0 or i == training_iter - 1:
             print('==========================')
             print('read data time:' + str(tot_time / disp_freq) + 's')
             print('train time:' + str(tot_train_time / disp_freq) + 's')
@@ -254,9 +254,9 @@ with sv.managed_session(config=tf.ConfigProto(gpu_options = tf.GPUOptions(per_pr
             time_end = time.time()
             print('disp time:' + str(time_end - time_start) + 's')
 
-        if i % save_freq == 0:
+        if i % save_freq == 0 or i == training_iter - 1:
             saver.save(sess, model_dir + 'model', global_step=i)
-        if i % test_freq == 0:
+        if i % test_freq == 0 or i == training_iter - 1:
             sum_test_loss = 0.0
             for j in range(test_batches):
                 # test_batch_x1s, test_batch_y1s, test_batch_x2s, test_batch_y2s, test_batch_flows, \

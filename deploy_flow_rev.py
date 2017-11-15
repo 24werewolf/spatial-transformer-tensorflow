@@ -23,6 +23,7 @@ parser.add_argument('--max-span', type=int, default=1)
 parser.add_argument('--random-black', type=int, default=None)
 parser.add_argument('--indices', type=int, nargs='+', required=True)
 parser.add_argument('--start-with-stable', action='store_true')
+parser.add_argument('--refine', type=int, default=1)
 args = parser.parse_args()
 
 MaxSpan = args.max_span
@@ -155,13 +156,16 @@ for video_name in video_list:
                     print('cut')
                 in_x = in_xs[0].copy()
                 in_x[0, ..., before_ch] = after_frames[0][..., 0]
-
-            img, black = sess.run([output, black_pix], feed_dict={x_tensor:in_x})
-            black = black[0, :, :]
-            img = img[0, :, :, :].reshape(height, width)
-            frame = img + black * (-1)
-            frame = frame.reshape(1, height, width, 1)
+            tmp_in_x = in_x.copy()
+            for j in range(args.refine):
+                img, black = sess.run([output, black_pix], feed_dict={x_tensor:tmp_in_x})
+                black = black[0, :, :]
+                img = img[0, :, :, :].reshape(height, width)
+                frame = img + black * (-1)
+                frame = frame.reshape(1, height, width, 1)
+                tmp_in_x[..., -1] = frame[..., 0]
             img = ((np.reshape(img, (height, width)) + 0.5) * 255).astype(np.uint8)
+            
             net_output = img
             img = cv2.cvtColor(img,cv2.COLOR_GRAY2BGR)
             videoWriter.write(img)
